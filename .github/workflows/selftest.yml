@@ -41,8 +41,59 @@ jobs:
           [ "$INSTALLED" = "$expected" ] || { echo "::error::installed $INSTALLED, expected $expected"; exit 1; }
           [ "$(gyrseek --version)" = "gyrseek $expected" ] || { echo "::error::gyrseek --version disagrees"; exit 1; }
 
-  pinned:
-    name: Install an exact version
+  versions:
+    name: List the pinned versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      versions: ${{ steps.list.outputs.versions }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # One entry per support/locks/gyrseek-X.Y.Z.txt, so adding a version adds a test.
+      - name: List
+        id: list
+        run: |
+          set -euo pipefail
+          versions=$(find support/locks -name 'gyrseek-*.txt' | sed -n 's#.*/gyrseek-\(.*\)\.txt$#\1#p' | sort -V | jq -R -s -c 'split("\n")[:-1]')
+          echo "versions=$versions" >> "$GITHUB_OUTPUT"
+
+  each-version:
+    name: ${{ matrix.version }} on ${{ matrix.runner }}
+    needs: versions
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+        version: ${{ fromJSON(needs.versions.outputs.versions) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install gyrseek ${{ matrix.version }}
+        id: gyrseek
+        uses: ./
+        with:
+          version: ${{ matrix.version }}
+
+      - name: Check what was installed
+        env:
+          VERSION: ${{ matrix.version }}
+          INSTALLED: ${{ steps.gyrseek.outputs.version }}
+        run: |
+          set -euo pipefail
+          [ "$INSTALLED" = "$VERSION" ] || { echo "::error::installed $INSTALLED, asked for $VERSION"; exit 1; }
+          [ "$(gyrseek --version)" = "gyrseek $VERSION" ] || { echo "::error::gyrseek --version disagrees"; exit 1; }
+
+  without-attestation:
+    name: The attestation check can be switched off
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -51,14 +102,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install gyrseek 1.4.3 without the attestation check
+      - name: Install the newest pinned gyrseek without it
+        id: gyrseek
         uses: ./
         with:
-          version: "1.4.3"
           verify-attestation: "false"
 
       - name: Check
-        run: test "$(gyrseek --version)" = "gyrseek 1.4.3"
+        env:
+          INSTALLED: ${{ steps.gyrseek.outputs.version }}
+        run: test "$(gyrseek --version)" = "gyrseek $INSTALLED"
 
   refuses:
     name: Refuses what it should
