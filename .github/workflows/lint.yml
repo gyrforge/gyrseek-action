@@ -24,7 +24,10 @@ jobs:
           persist-credentials: false
 
       - name: ShellCheck
-        run: shellcheck -s bash action.sh support/add-version.sh
+        run: shellcheck -s bash action.sh support/*.sh
+
+      - name: Check the pinned versions are complete
+        run: support/check-locks.sh
 
       - name: yamllint
         run: yamllint .
