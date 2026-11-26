@@ -1,0 +1,96 @@
+name: Self-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  install:
+    name: Install on ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install gyrseek (latest pinned)
+        id: gyrseek
+        uses: ./
+
+      - name: Check what was installed
+        env:
+          INSTALLED: ${{ steps.gyrseek.outputs.version }}
+        run: |
+          set -euo pipefail
+          expected=$(find support/locks -name 'gyrseek-*.txt' | sed -n 's#.*/gyrseek-\(.*\)\.txt$#\1#p' | sort -V | tail -n 1)
+          [ "$INSTALLED" = "$expected" ] || { echo "::error::installed $INSTALLED, expected $expected"; exit 1; }
+          [ "$(gyrseek --version)" = "gyrseek $expected" ] || { echo "::error::gyrseek --version disagrees"; exit 1; }
+
+  pinned:
+    name: Install an exact version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install gyrseek 1.4.3 without the attestation check
+        uses: ./
+        with:
+          version: "1.4.3"
+          verify-attestation: "false"
+
+      - name: Check
+        run: test "$(gyrseek --version)" = "gyrseek 1.4.3"
+
+  refuses:
+    name: Refuses what it should
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: A version that is not pinned, and one that is not a version
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: |
+          set -u
+          for v in 0.0.1 '1.4.3; id' 'latest-ish'; do
+            if RUNNER_OS=Linux RUNNER_ARCH=X64 RUNNER_TEMP="$RUNNER_TEMP_DIR" GITHUB_PATH=/dev/null GITHUB_OUTPUT=/dev/null \
+               GHA_GYRSEEK_VERSION="$v" ./action.sh; then
+              echo "::error::version '$v' was accepted"; exit 1
+            fi
+          done
+
+      - name: A tampered hash
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: |
+          set -u
+          copy=$(mktemp -d)
+          cp -R action.sh support "$copy/"
+          sed -i 's/^2d30b35a/3d30b35a/;s/^273c5cea/373c5cea/' "$copy/support/locks/gyrseek-1.4.3.txt"
+          if RUNNER_OS=Linux RUNNER_ARCH=X64 RUNNER_TEMP="$RUNNER_TEMP_DIR" GITHUB_PATH=/dev/null GITHUB_OUTPUT=/dev/null \
+             GHA_GYRSEEK_VERIFY_ATTESTATION=false "$copy/action.sh"; then
+            echo "::error::an archive with the wrong hash was installed"; exit 1
+          fi

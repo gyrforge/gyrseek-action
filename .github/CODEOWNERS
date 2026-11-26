@@ -1,0 +1,2 @@
+# Everything here runs in other people's CI, so every change needs a review.
+* @gyrforge/gyrseek-builders

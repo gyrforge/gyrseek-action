@@ -1,0 +1,52 @@
+name: gyrseek-action
+description: Install gyrseek, a supply chain scanner that wraps npm, pnpm, pip, uv and poetry, from a hash-pinned release
+
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  version:
+    description: |
+      The version of gyrseek to install.
+
+      An exact version such as `1.4.3`, or `latest` (the default) for the newest
+      version this release of the action has a pinned hash for.
+    required: false
+    default: latest
+  verify-attestation:
+    description: |
+      Also check, with `gh attestation verify`, that the archive was built by
+      the release workflow of gyrforge/gyrseek. Needs the GitHub CLI on the
+      runner (GitHub-hosted runners have it).
+    required: false
+    default: "true"
+  token:
+    description: |
+      The GitHub token used to verify the attestation.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  version:
+    description: The gyrseek version that was installed
+    value: ${{ steps.install.outputs.version }}
+  path:
+    description: The directory that holds the gyrseek binary (it is also added to PATH)
+    value: ${{ steps.install.outputs.path }}
+  target:
+    description: The release target that was installed, for example x86_64-unknown-linux-gnu
+    value: ${{ steps.install.outputs.target }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install gyrseek
+      id: install
+      run: |
+        "${GITHUB_ACTION_PATH}/action.sh"
+      env:
+        GHA_GYRSEEK_VERSION: ${{ inputs.version }}
+        GHA_GYRSEEK_VERIFY_ATTESTATION: ${{ inputs.verify-attestation }}
+        GHA_GYRSEEK_TOKEN: ${{ inputs.token }}
+      shell: bash

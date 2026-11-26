@@ -1,0 +1,4 @@
+# `uses: ./` is the form every runner supports; the newer `$/` form is not adopted until it is verified.
+rules:
+  self-repository:
+    disable: true
