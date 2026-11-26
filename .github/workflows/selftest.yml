@@ -147,3 +147,23 @@ jobs:
              GHA_GYRSEEK_VERIFY_ATTESTATION=false "$copy/action.sh"; then
             echo "::error::an archive with the wrong hash was installed"; exit 1
           fi
+
+  # The matrix rows are named after the versions and runners, so their names change
+  # whenever a version is pinned. This one job has a stable name: require it (and
+  # Lint) in the ruleset instead of the individual rows.
+  all-passed:
+    name: Self-test passed
+    if: ${{ always() }}
+    needs: [install, versions, each-version, without-attestation, refuses]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every job must have succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -eu
+          echo "results: $RESULTS"
+          for result in $RESULTS; do
+            [ "$result" = success ] || { echo "::error::a self-test job finished as '$result'"; exit 1; }
+          done
