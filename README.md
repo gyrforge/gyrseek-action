@@ -77,10 +77,25 @@ support/add-version.sh X.Y.Z
 
 It downloads the release, checks every archive against `SHA256SUMS` and against its attestation, and only then writes `support/locks/gyrseek-X.Y.Z.txt`. Review the new file in the pull request: it is what the action trusts from then on. A pinned version's file is never rewritten, and `v1.4.2` is not pinned: it shipped under the wrong licence.
 
+## Releasing the action
+
+Users pin a tag or, better, its commit, so a tag fixes the set of hashes they trust. Version the action on its own, not after gyrseek:
+
+- A new gyrseek version pinned: a minor release (`v1.1.0` adds gyrseek 1.4.4), because `version: latest` moves forward.
+- A fix to the action's script or workflows: a patch release.
+- A change to inputs or behavior that breaks users: a major release.
+
+```bash
+just check          # every pinned version is complete (CI runs this too)
+just tag v1.1.0     # needs gh and just
+```
+
+`support/tag.sh` refuses unless `HEAD` is `origin/main`, the working tree is clean, every lock file is complete, and the self-test has passed on that commit (it waits for a run in progress). It never replaces a tag that exists. It then pushes the tag and creates the GitHub Release, whose notes list the pinned gyrseek versions and the commit to pin. Turn on immutable releases in the repository settings, so that a published release's tag cannot be moved.
+
 ## Development
 
 - `.github/workflows/selftest.yml` installs on Linux x86_64, Linux ARM64 and macOS, installs an exact version, and checks that an unpinned version, a malformed version and a tampered hash are all refused.
-- `.github/workflows/lint.yml` runs ShellCheck, yamllint and zizmor.
+- `.github/workflows/lint.yml` runs ShellCheck, yamllint, zizmor and `support/check-locks.sh`.
 - Changes need a review from `@gyrforge/gyrseek-builders` (`.github/CODEOWNERS`).
 
 ## License
