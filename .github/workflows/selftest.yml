@@ -135,18 +135,31 @@ jobs:
             fi
           done
 
-      - name: A tampered hash
+      # Every pinned version, in turn: with its Linux x86_64 hash changed, it must be refused
+      # for that reason. Nothing here names a version, so pinning a new one needs no edit.
+      - name: A tampered hash, for every pinned version
         env:
           RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: |
           set -u
-          copy=$(mktemp -d)
-          cp -R action.sh support "$copy/"
-          sed -i 's/^2d30b35a/3d30b35a/;s/^273c5cea/373c5cea/' "$copy/support/locks/gyrseek-1.4.3.txt"
-          if RUNNER_OS=Linux RUNNER_ARCH=X64 RUNNER_TEMP="$RUNNER_TEMP_DIR" GITHUB_PATH=/dev/null GITHUB_OUTPUT=/dev/null \
-             GHA_GYRSEEK_VERIFY_ATTESTATION=false "$copy/action.sh"; then
-            echo "::error::an archive with the wrong hash was installed"; exit 1
-          fi
+          for lock in support/locks/gyrseek-*.txt; do
+            version=$(basename "$lock" .txt)
+            version=${version#gyrseek-}
+            copy=$(mktemp -d)
+            cp -R action.sh support "$copy/"
+            # Change the first hex digit of the Linux x86_64 hash, so that it cannot match.
+            awk '/x86_64-unknown-linux-gnu/ { c = substr($0, 1, 1); $0 = (c == "0" ? "1" : "0") substr($0, 2) } { print }' \
+              "$copy/support/locks/gyrseek-$version.txt" > "$copy/tampered" \
+              && mv "$copy/tampered" "$copy/support/locks/gyrseek-$version.txt"
+            if out=$(RUNNER_OS=Linux RUNNER_ARCH=X64 RUNNER_TEMP="$RUNNER_TEMP_DIR" GITHUB_PATH=/dev/null GITHUB_OUTPUT=/dev/null \
+                     GHA_GYRSEEK_VERSION="$version" GHA_GYRSEEK_VERIFY_ATTESTATION=false "$copy/action.sh" 2>&1); then
+              echo "::error::gyrseek $version was installed with a wrong hash"; exit 1
+            fi
+            case "$out" in
+              *"does not match the SHA-256"*) echo "refused as it should: $version" ;;
+              *) echo "::error::gyrseek $version was refused for the wrong reason: $out"; exit 1 ;;
+            esac
+          done
 
   # The matrix rows are named after the versions and runners, so their names change
   # whenever a version is pinned. This one job has a stable name: require it (and
